@@ -1,0 +1,12 @@
+[package]
+name = "switchboard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitmask-enum = "2.2.5"
+hid = "0.4.1"
+libc = "0.2.183"
+reqwest = "0.13.2"
+rusb = "0.9.4"
+usb-ids = "1.2025.2"
