@@ -145,6 +145,16 @@ pub struct KeyEvent {
     pub is_consumer: bool,
 }
 
+impl Default for KeyEvent {
+    fn default() -> Self {
+        Self {
+            modifier_bitmask: ModifierKey::none(),
+            keys: [Key::None; 6],
+            is_consumer: false,
+        }
+    }
+}
+
 impl KeyEvent {
     /// Returns true if any modifier is currently active.
     #[inline]

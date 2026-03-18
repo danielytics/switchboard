@@ -5,8 +5,10 @@ edition = "2024"
 
 [dependencies]
 bitmask-enum = "2.2.5"
+ctrlc = "3.5.2"
 hid = "0.4.1"
 libc = "0.2.183"
 reqwest = "0.13.2"
 rusb = "0.9.4"
+tokio = {version = "1.50.0", features = ["full"]}
 usb-ids = "1.2025.2"

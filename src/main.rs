@@ -4,9 +4,10 @@ use std::time::Duration;
 pub mod device;
 pub mod keys;
 
-use crate::device::{Device, OnKeyResult, PollResult, PollSettings};
+use crate::device::{Device, PollResult, PollSettings};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("USB HID Device Selector");
     println!("=======================\n");
 
@@ -58,15 +59,28 @@ fn main() {
 
     println!("Listening. Press the SAME key again to exit.\n");
 
-    device.read_key_loop(Duration::from_millis(100), &mut |ev| {
-        println!("{}", ev);
+    let (mut rx, stop_device, thread_handle) = device.start(Duration::from_millis(100));
 
-        if ev.contains_key(exit_key.keys[0]) {
-            OnKeyResult::Break
-        } else {
-            OnKeyResult::Continue
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                println!("\nCtrl-C received!");
+                stop_device();
+                break;
+            }
+            maybe_ev = rx.recv() => {
+                if let Some(ev) = maybe_ev {
+                    println!("{}", ev);
+                    if ev.contains_key(exit_key.keys[0]) {
+                        stop_device();
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
         }
-    });
+    }
 
-    drop(device);
+    let _ = thread_handle.join();
 }

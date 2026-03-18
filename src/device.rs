@@ -1,5 +1,14 @@
 use rusb::{Context, DeviceDescriptor, DeviceHandle, Result, UsbContext};
-use std::{cell::RefCell, fmt::Display, thread, time::Duration};
+use std::{
+    cell::RefCell,
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
+};
 use usb_ids::{self, FromId};
 
 use crate::keys::{KeyEvent, KeyParser};
@@ -186,6 +195,8 @@ pub struct DeviceInstance {
 
     cached_manufacturer_string: RefCell<Option<String>>,
     cached_product_string: RefCell<Option<String>>,
+
+    listening: Arc<AtomicBool>,
 }
 
 impl Drop for DeviceInstance {
@@ -338,6 +349,7 @@ impl DeviceInstance {
             max_packet_size,
             cached_manufacturer_string: RefCell::new(None),
             cached_product_string: RefCell::new(None),
+            listening: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -391,29 +403,40 @@ impl DeviceInstance {
         }
     }
 
-    pub fn read_key_loop<F>(&self, duration: Duration, on_key: &mut F)
-    where
-        F: FnMut(KeyEvent) -> OnKeyResult,
-    {
-        let mut buf = vec![0u8; self.max_packet_size];
+    pub fn start(
+        self,
+        timeout: Duration,
+    ) -> (
+        tokio::sync::mpsc::Receiver<KeyEvent>,
+        impl Fn() + Send + Sync + 'static,
+        std::thread::JoinHandle<()>,
+    ) {
+        self.listening.store(true, Ordering::Relaxed);
 
-        loop {
-            if let Some(ev) = self.read_key(&mut buf, duration) {
-                if on_key(ev) == OnKeyResult::Break {
-                    break;
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let stop_listening = Arc::clone(&self.listening);
+
+        let handle = std::thread::spawn(move || {
+            let mut buf = vec![0u8; self.max_packet_size];
+            while self.listening.load(Ordering::Relaxed) {
+                if let Some(ev) = self.read_key(&mut buf, timeout) {
+                    if tx.blocking_send(ev).is_err() {
+                        break;
+                    }
                 }
             }
-        }
+        });
+
+        let stop_fn = move || {
+            stop_listening.store(false, Ordering::Relaxed);
+        };
+
+        (rx, stop_fn, handle)
     }
 
-    pub fn read_key(&self, buf: &mut [u8], duration: Duration) -> Option<KeyEvent> {
-        match self.handle.read_interrupt(self.endpoint, buf, duration) {
-            Ok(n) => {
-                println!("Parsing {} bytes", n);
-                let key = KeyParser::parse(&buf[..n]);
-                println!("Parsed into: {:?}", key);
-                key
-            }
+    pub fn read_key(&self, buf: &mut [u8], timeout: Duration) -> Option<KeyEvent> {
+        match self.handle.read_interrupt(self.endpoint, buf, timeout) {
+            Ok(n) => KeyParser::parse(&buf[..n]),
             Err(rusb::Error::Timeout) => None,
             Err(e) => {
                 eprintln!("Error: {:?}", e);
@@ -433,10 +456,4 @@ fn clean_string(result: Result<String>, default: &String) -> String {
                 .to_string()
         })
         .unwrap_or(default.clone())
-}
-
-#[derive(PartialEq, Eq)]
-pub enum OnKeyResult {
-    Continue,
-    Break,
 }
