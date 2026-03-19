@@ -1,0 +1,2 @@
+# Replace vvvv and pppp with your USB Vendor and Product IDs
+SUBSYSTEM=="usb", MODE="0666", TAG+="uaccess"

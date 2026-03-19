@@ -70,6 +70,31 @@ impl PollSettings {
 }
 
 impl Device {
+    pub fn new(vid: u16, pid: u16, iface: u8) -> Self {
+        let (vendor_name, product_name) = Self::find_static_device_details(vid, pid);
+        Self {
+            vid,
+            pid,
+            iface,
+            vendor_name: vendor_name.to_string(),
+            product_name: product_name.to_string(),
+        }
+    }
+
+    fn find_static_device_details(vid: u16, pid: u16) -> (&'static str, &'static str) {
+        let vendor_name = match usb_ids::Vendor::from_id(vid) {
+            Some(vendor) => vendor.name(),
+            None => "Unknown vendor",
+        };
+
+        let product_name = match usb_ids::Device::from_vid_pid(vid, pid) {
+            Some(product) => product.name(),
+            None => "Unknown product",
+        };
+
+        (vendor_name, product_name)
+    }
+
     pub fn list() -> Vec<Device> {
         let context = Context::new().unwrap();
 
@@ -81,18 +106,8 @@ impl Device {
                 let dev_desc = device.device_descriptor().unwrap();
                 let vid = dev_desc.vendor_id();
                 let pid = dev_desc.product_id();
-                let vendor_name = match usb_ids::Vendor::from_id(dev_desc.vendor_id()) {
-                    Some(vendor) => vendor.name(),
-                    None => "Unknown vendor",
-                };
+                let (vendor_name, product_name) = Self::find_static_device_details(vid, pid);
 
-                let product_name = match usb_ids::Device::from_vid_pid(
-                    dev_desc.vendor_id(),
-                    dev_desc.product_id(),
-                ) {
-                    Some(product) => product.name(),
-                    None => "Unknown product",
-                };
                 let mut interfaces: Vec<Device> = Vec::new();
                 let config = device.active_config_descriptor().ok()?;
                 for interface in config.interfaces() {
@@ -167,13 +182,26 @@ impl Device {
         drop(opened);
 
         match detected_device {
-            Some((instance, event)) => PollResult::Device(instance, event),
+            Some((instance, event)) => {
+                // Read one more to make sure the buffer is cleared
+                let slice = &mut buf[0..instance.max_packet_size];
+                loop {
+                    if let Some(ev) = instance.read_key(slice, settings.scan_time) {
+                        println!("Got: {}", ev);
+                    } else {
+                        println!("Not got");
+                        break;
+                    }
+                }
+                // Return the polled device
+                PollResult::Device(instance, event)
+            }
             None => PollResult::None,
         }
     }
 
     pub fn open(&self) -> rusb::Result<DeviceInstance> {
-        DeviceInstance::new(&self)
+        DeviceInstance::new(&self, None)
     }
 }
 
@@ -241,22 +269,21 @@ impl Drop for DeviceInstance {
 }
 
 impl DeviceInstance {
-    fn new(info: &Device) -> rusb::Result<DeviceInstance> {
+    fn new(
+        info: &Device,
+        device: Option<(rusb::Device<Context>, DeviceDescriptor)>,
+    ) -> rusb::Result<DeviceInstance> {
         let vid = info.vid;
         let pid = info.pid;
         let iface = info.iface;
 
         let context = Context::new()?;
 
-        let (device, descriptor) = context
-            .devices()?
-            .iter()
-            .map(|d| {
-                let desc = d.device_descriptor().unwrap();
-                (d, desc)
-            })
-            .find(|(_d, desc)| desc.vendor_id() == vid && desc.product_id() == pid)
-            .ok_or(rusb::Error::NoDevice)?;
+        let (device, descriptor) = if let Some(dev_desc) = device {
+            dev_desc
+        } else {
+            find_device(context, vid, pid)?
+        };
 
         let handle = device.open()?;
 
@@ -456,4 +483,20 @@ fn clean_string(result: Result<String>, default: &String) -> String {
                 .to_string()
         })
         .unwrap_or(default.clone())
+}
+
+fn find_device(
+    context: Context,
+    vid: u16,
+    pid: u16,
+) -> rusb::Result<(rusb::Device<Context>, DeviceDescriptor)> {
+    Ok(context
+        .devices()?
+        .iter()
+        .map(|d| {
+            let desc = d.device_descriptor().unwrap();
+            (d, desc)
+        })
+        .find(|(_d, desc)| desc.vendor_id() == vid && desc.product_id() == pid)
+        .ok_or(rusb::Error::NoDevice)?)
 }

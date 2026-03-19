@@ -197,8 +197,33 @@ impl KeyEvent {
         self.keys.iter().any(|&k| k == target)
     }
 
-    pub fn contains(&self, subset: KeyEvent) -> bool {
-        self.modifier_bitmask & subset.modifier_bitmask != 0
+    pub fn contains(&self, other: KeyEvent) -> bool {
+        if other.modifier_bitmask != 0 && self.modifier_bitmask & other.modifier_bitmask == 0 {
+            return false;
+        }
+
+        // Iterate through each key in the 'other' event
+        for &required_key in &other.keys {
+            // Skip empty slots in the requirement
+            if required_key == Key::None {
+                continue;
+            }
+
+            // Check if THIS event contains that required key
+            let mut found = false;
+            for &my_key in &self.keys {
+                if my_key == required_key {
+                    found = true;
+                    break;
+                }
+            }
+
+            // If a required key wasn't found in our keys, the check fails
+            if !found {
+                return false;
+            }
+        }
+        true
     }
 
     /// Returns true if no key is pressed

@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 use std::time::Duration;
 
+pub mod cli;
+pub mod config;
 pub mod device;
 pub mod keys;
 
@@ -8,8 +10,52 @@ use crate::device::{Device, PollResult, PollSettings};
 
 #[tokio::main]
 async fn main() {
+    match cli::exec().await {
+        Ok(action) => match action {
+            cli::Action::AddDevice { name, id: _ } => {
+                println!("Poll for new device");
+                if let Some(name) = name {
+                    println!("Set name to: {}", name);
+                }
+            }
+            cli::Action::ListDevices => {
+                println!("List configured devices")
+            }
+            cli::Action::RemoveDevice { name } => {
+                println!("Remove device: {}", name);
+            }
+            cli::Action::Run => {
+                println!("Open active devcies and run loop");
+                run().await;
+            }
+        },
+        Err(error) => {
+            println!("Error: {}", error);
+        }
+    }
+}
+
+async fn run() {
     println!("USB HID Device Selector");
     println!("=======================\n");
+
+    match config::device::load() {
+        Ok(devices_config) => {
+            for config in devices_config {
+                if config.active {
+                    let device =
+                        Device::new(config.device.vid, config.device.pid, config.device.iface);
+                    println!(
+                        "{} -- Active: {}, Profile: {}, Name: {}",
+                        device, config.active, config.profile, config.name
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            println!("Error: {}", error)
+        }
+    }
 
     let (device, exit_key) = match Device::poll(
         PollSettings::default()
@@ -71,7 +117,7 @@ async fn main() {
             maybe_ev = rx.recv() => {
                 if let Some(ev) = maybe_ev {
                     println!("{}", ev);
-                    if ev.contains_key(exit_key.keys[0]) {
+                    if ev.contains(exit_key) {
                         stop_device();
                         break;
                     }

@@ -11,6 +11,20 @@ Switchboard is a tool to turn any USB keyboard into a hotkey panel (making a nor
 * Timers (start, cancel, restart), trigger action on timeout
 * Multiple layers (shift, toggle)
 
+## Install
+
+1. Build: `cargo build --release`
+
+2. Set udev permissions:
+
+```
+sudo cp resources/99-switchboard.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+3. Copy `target/release/switchboard` to your path.
+
 ## Running
 
 * `switchboard` - Run switchboard
@@ -46,6 +60,7 @@ This is stored in `~/.config/switchboard/devices.toml`
 
 ```toml
 [[devices]]
+  name = ... # A name to identify this device by
   vid = ...
   pid = ...
   iface = ...
