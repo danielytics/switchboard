@@ -11,7 +11,10 @@ use std::{
 };
 use usb_ids::{self, FromId};
 
-use crate::keys::{KeyEvent, KeyParser};
+use crate::{
+    cli::DeviceId,
+    keys::{KeyEvent, KeyParser},
+};
 
 const HID_CLASS: u8 = 0x03;
 // const DEVICE_TO_HOST: u8 = 0xA1; // 10100001b: Device-to-Host, Class, Interface
@@ -43,6 +46,8 @@ pub struct PollSettings {
     delay: Duration,
     /// How long te scan each individual device for each iteration
     scan_time: Duration,
+    /// Devices to skip
+    blacklist: Vec<DeviceId>,
 }
 
 impl Default for PollSettings {
@@ -51,6 +56,7 @@ impl Default for PollSettings {
             timeout: Duration::from_secs(10),
             delay: Duration::from_millis(1),
             scan_time: Duration::from_millis(10),
+            blacklist: Vec::new(),
         }
     }
 }
@@ -66,6 +72,16 @@ impl PollSettings {
 
     pub fn with_scan_time(self, scan_time: Duration) -> Self {
         Self { scan_time, ..self }
+    }
+
+    pub fn with_blacklist<I>(self, list: I) -> Self
+    where
+        I: IntoIterator<Item = DeviceId>,
+    {
+        Self {
+            blacklist: list.into_iter().collect(),
+            ..self
+        }
     }
 }
 

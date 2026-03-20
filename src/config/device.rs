@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 
 use crate::{config::get_config_dir, device::Device};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct DevicesConfig {
     devices: Vec<DeviceConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct DeviceConfig {
     pub name: String,
     pub vid: u16,
@@ -26,6 +26,17 @@ pub struct DeviceInfo {
     pub profile: String,
 }
 
+impl From<DeviceConfig> for DeviceInfo {
+    fn from(value: DeviceConfig) -> Self {
+        Self {
+            name: value.name,
+            device: Device::new(value.vid, value.pid, value.iface),
+            active: value.active,
+            profile: value.profile,
+        }
+    }
+}
+
 pub fn load() -> Result<Vec<DeviceInfo>> {
     if let Some(base_path) = get_config_dir() {
         let path = base_path.join("devices.toml");
@@ -39,13 +50,36 @@ pub fn load() -> Result<Vec<DeviceInfo>> {
         return Ok(parsed
             .devices
             .into_iter()
-            .map(|d| DeviceInfo {
+            .map(|d| DeviceInfo::from(d))
+            .collect());
+    }
+
+    anyhow::bail!("Could not open devices.toml");
+}
+
+pub fn save(config: Vec<DeviceInfo>) -> Result<()> {
+    if let Some(base_path) = get_config_dir() {
+        let path = base_path.join("devices.toml");
+
+        let devices = config
+            .into_iter()
+            .map(|d| DeviceConfig {
                 name: d.name,
-                device: Device::new(d.vid, d.pid, d.iface),
+                vid: d.device.vid,
+                pid: d.device.pid,
+                iface: d.device.iface,
                 active: d.active,
                 profile: d.profile,
             })
-            .collect());
+            .collect();
+
+        let contents = toml::to_string(&DevicesConfig { devices })
+            .with_context(|| format!("Could not serialize devices"))?;
+
+        fs::write(&path, contents)
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+
+        return Ok(());
     }
 
     anyhow::bail!("Could not open devices.toml");

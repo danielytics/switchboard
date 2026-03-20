@@ -31,6 +31,9 @@ enum DeviceCommands {
 
         #[arg(long, value_name = "VID:PID")]
         id: Option<String>,
+
+        #[arg(long, value_name = "PROFILE")]
+        profile: Option<String>,
     },
     List,
     Remove {
@@ -64,6 +67,7 @@ pub enum Action {
     Run,
     AddDevice {
         name: Option<String>,
+        profile: Option<String>,
         id: Option<DeviceId>,
     },
     ListDevices,
@@ -78,12 +82,12 @@ impl TryFrom<Cli> for Action {
     fn try_from(cli: Cli) -> Result<Self, Self::Error> {
         match cli.command {
             Some(Commands::Device { action }) => match action {
-                DeviceCommands::Add { name, id } => {
+                DeviceCommands::Add { name, id, profile } => {
                     let id = match id {
                         Some(s) => Some(DeviceId::try_from(s)?),
                         None => None,
                     };
-                    Ok(Action::AddDevice { name, id })
+                    Ok(Action::AddDevice { name, profile, id })
                 }
                 DeviceCommands::List => Ok(Action::ListDevices),
                 DeviceCommands::Remove { name } => Ok(Action::RemoveDevice { name }),
