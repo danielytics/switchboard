@@ -31,6 +31,7 @@ sudo udevadm trigger
 * `switchboard device add` - Add a new device. Will prompt for a key press on the desired device.
 * `switchboard device list` - List configured devices.
 * `switchboard device remove <name>` - Remove a device.
+* `switchboard device set <name> [--active <true|false>] [--name <name>] [--profile <profile>]` - Set properties of a device
 
 Device changes don't take effect until next run.
 

@@ -10,65 +10,37 @@ pub mod keys;
 use crate::cli::DeviceId;
 use crate::config::device::DeviceInfo;
 use crate::device::{Device, PollResult, PollSettings};
-use crate::gui::GUI;
 
 #[tokio::main]
 async fn main() {
-    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<gui::Command>(10);
-    let gui = GUI::new(cmd_tx);
-
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                // Listen for commands from the Tray/GUI
-                Some(cmd) = cmd_rx.recv() => {
-                    match cmd {
-                        gui::Command::Quit => {
-                            println!("Cleaning up hardware...");
-                            break;
-                        }
-                        gui::Command::ReloadSettings => {
-                            println!("Reloading config file...");
-                        }
-                    }
+    match cli::exec().await {
+        Ok(action) => match action {
+            cli::Action::AddDevice {
+                name,
+                profile,
+                id: _,
+            } => {
+                println!("Poll for new device");
+                if let Some(name) = &name {
+                    println!("Set name to: {}", name);
                 }
-                // Your existing hardware/USB logic
-                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
-                    // Do USB work...
-                }
+                poll(name, profile);
             }
+            cli::Action::ListDevices => {
+                println!("List configured devices")
+            }
+            cli::Action::RemoveDevice { name } => {
+                println!("Remove device: {}", name);
+            }
+            cli::Action::Run => {
+                println!("Open active devcies and run loop");
+                run().await;
+            }
+        },
+        Err(error) => {
+            println!("Error: {}", error);
         }
-    });
-
-    gui.run();
-    // match cli::exec().await {
-    //     Ok(action) => match action {
-    //         cli::Action::AddDevice {
-    //             name,
-    //             profile,
-    //             id: _,
-    //         } => {
-    //             println!("Poll for new device");
-    //             if let Some(name) = &name {
-    //                 println!("Set name to: {}", name);
-    //             }
-    //             poll(name, profile);
-    //         }
-    //         cli::Action::ListDevices => {
-    //             println!("List configured devices")
-    //         }
-    //         cli::Action::RemoveDevice { name } => {
-    //             println!("Remove device: {}", name);
-    //         }
-    //         cli::Action::Run => {
-    //             println!("Open active devcies and run loop");
-    //             run().await;
-    //         }
-    //     },
-    //     Err(error) => {
-    //         println!("Error: {}", error);
-    //     }
-    // }
+    }
 }
 
 async fn run() {
@@ -88,31 +60,56 @@ async fn run() {
                         device.info, config.active, config.profile, config.name
                     );
 
+                    // GUI
+                    let (gui, mut cmd_rx) = gui::init();
+                    let Ok(exit_gui) = gui.exit_fn() else {
+                        return;
+                    };
+                    // USB
                     let (mut rx, stop_device, thread_handle) =
                         device.start(Duration::from_millis(100));
 
-                    // loop {
-                    //     tokio::select! {
-                    //         _ = tokio::signal::ctrl_c() => {
-                    //             println!("\nCtrl-C received!");
-                    //             stop_device();
-                    //             break;
-                    //         }
-                    //         maybe_ev = rx.recv() => {
-                    //             if let Some(ev) = maybe_ev {
-                    //                 println!("{}", ev);
-                    //                 // if ev.contains(exit_key) {
-                    //                 //     stop_device();
-                    //                 //     break;
-                    //                 // }
-                    //             } else {
-                    //                 break;
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                    let handle = tokio::spawn(async move {
+                        loop {
+                            tokio::select! {
+                                // Detect Ctrl-C
+                                _ = tokio::signal::ctrl_c() => {
+                                    println!("\nCtrl-C received!");
+                                    break;
+                                }
 
-                    // let _ = run_gui(stop_device);
+                                // Receive USB event
+                                maybe_ev = rx.recv() => {
+                                    if let Some(ev) = maybe_ev {
+                                        println!("{}", ev);
+                                        // if ev.contains(exit_key) {
+                                        //     stop_device();
+                                        //     break;
+                                        // }
+                                    }
+                                }
+
+                                // Receive USB event
+                                    Some(cmd) = cmd_rx.recv() => {
+                                        match cmd {
+                                            gui::Command::ReloadSettings => {
+                                                println!("Reloading config file...");
+                                            }
+                                            gui::Command::Quit => {
+                                                println!("Cleaning up hardware...");
+                                                break;
+                                            }
+                                        }
+                                    }
+                            }
+                        }
+                        // Cleanup
+                        exit_gui();
+                        stop_device();
+                    });
+
+                    let _ = gui.run().await;
+                    let _ = handle.await;
                     let _ = thread_handle.join();
                 }
             }

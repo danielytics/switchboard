@@ -22,6 +22,7 @@ regex = "1.12.3"
 reqwest = "0.13.2"
 rusb = "0.9.4"
 serde = { version = "1.0.228", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "signal"] }
 toml = "1.0.7"
 tray-icon = "0.21.3"
